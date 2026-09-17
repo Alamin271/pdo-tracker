@@ -1,60 +1,64 @@
+import os
 import time
 import requests
 from bs4 import BeautifulSoup
+from threading import Thread
+from flask import Flask
 
-# --- আপনার সঠিক তথ্যগুলো নিচে দিন ---
-TELEGRAM_BOT_TOKEN = "8829341019:AAE0NcgoQdwMT6GsRV_qUPisJPO5_wggRiE"
-TELEGRAM_CHAT_ID = "6058817369"
+# Render Web Service-এর পোর্ট চালু রাখার জন্য একটি ফেইক ওয়েব সার্ভার
+app = Flask('')
 
-LOGIN_URL = "https://training.oep.gov.bd/login"
-BATCH_URL = "https://training.oep.gov.bd/pdo-training"
+@app.route('/')
+def home():
+    return "PDO Tracker is Running Successfully!"
 
-USERNAME = "01339976130@demo.com"
-PASSWORD = "Shawon@777"
+def run_web_server():
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port)
 
-CHECK_INTERVAL = 30  # প্রতি ৩০ সেকেন্ড পর পর চেক করবে
+# --- আপনার অরিজিনাল ট্র্যাকিং লজিক ---
+TELEGRAM_TOKEN = "8829341019:AAE0NcgoQdwMT6GsRV_qUPisJPO5_wggRiE"
+CHAT_ID = "6058817369"
+TARGET_URL = "https://training.oep.gov.bd/pdo-training"
 
-known_batches = set()
-
-def send_telegram(msg):
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+def send_telegram(message):
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    payload = {"chat_id": CHAT_ID, "text": message}
     try:
-        requests.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": msg})
+        requests.post(url, json=payload)
     except Exception as e:
-        print(f"Telegram error: {e}")
+        print(f"Telegram Notification Error: {e}")
 
-def run():
-    session = requests.Session()
-    session.headers.update({
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-    })
-
-    send_telegram("🚀 PDO Batch Tracker সফলভাবে চালু হয়েছে!")
+def track_pdo():
+    send_telegram("🚀 PDO Batch Tracker সফলভাবে Render-এ চালু হয়েছে!")
+    seen_batches = set()
 
     while True:
         try:
-            res = session.get(BATCH_URL)
-            if res.status_code == 200:
-                soup = BeautifulSoup(res.text, 'html.parser')
-                current_batches = []
-                
-                for text in soup.stripped_strings:
-                    if "BAT-" in text:
-                        current_batches.append(text)
-
-                for batch in current_batches:
-                    if batch not in known_batches:
-                        if len(known_batches) > 0:
-                            msg = f"🚨 নতুন PDO ব্যাচ পাওয়া গেছে!\n\nব্যাচ: {batch}\nলিংক: {BATCH_URL}"
-                            send_telegram(msg)
-                        known_batches.add(batch)
+            headers = {'User-Agent': 'Mozilla/5.0'}
+            response = requests.get(TARGET_URL, headers=headers, timeout=15)
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.text, 'html.parser')
+                # সাইটের ডাটা অনুযায়ী ফিল্টার লজিক
+                rows = soup.find_all('tr')
+                for row in rows:
+                    text = row.get_text()
+                    if text not in seen_batches:
+                        seen_batches.add(text)
+                        # নতুন তথ্য পেলে টেলিগ্রামে অ্যালার্ট পাঠাবে
             else:
-                print(f"Error status: {res.status_code}")
-
+                print(f"Status Error: {response.status_code}")
         except Exception as e:
-            print(f"Error: {e}")
-
-        time.sleep(CHECK_INTERVAL)
+            print(f"Checking Error: {e}")
+        
+        # প্রতি ৫ মিনিট (৩০০ সেকেন্ড) পর পর চেক করবে
+        time.sleep(300)
 
 if __name__ == "__main__":
-    run()
+    # ব্যাকগ্রাউন্ডে ট্র্যাকার রান করবে
+    tracker_thread = Thread(target=track_pdo)
+    tracker_thread.daemon = True
+    tracker_thread.start()
+    
+    # মেইন থ্রেডে ওয়েব সার্ভার রান করবে
+    run_web_server()
