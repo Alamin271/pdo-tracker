@@ -5,7 +5,6 @@ from bs4 import BeautifulSoup
 from threading import Thread
 from flask import Flask
 
-# Render Web Service-এর পোর্ট চালু রাখার জন্য ফ্ল্যাস্ক সার্ভার
 app = Flask('')
 
 @app.route('/')
@@ -16,7 +15,6 @@ def run_web_server():
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
 
-# --- আপনার ক্রেডেনশিয়াল ও কনফিগারেশন ---
 TELEGRAM_TOKEN = "8829341019:AAE0NcgoQdwMT6GsRV_qUPisJPO5_wggRiE"
 CHAT_ID = "6058817369"
 
@@ -36,10 +34,13 @@ def send_telegram(message):
         print(f"Telegram Exception: {e}")
 
 def track_pdo():
-    print("Starting PDO Tracking loop...")
-    send_telegram("🚀 PDO Batch Tracker সফলভাবে Render-এ চালু হয়েছে!")
+    # সার্ভার পুরোপুরি চালু হওয়ার জন্য ৫ সেকেন্ড অপেক্ষা করবে
+    time.sleep(5)
+    
+    print("Sending welcome message...")
+    send_telegram("🚀 PDO Batch Tracker সফলভাবে Render-এ চালু হয়েছে এবং মনিটরিং শুরু করেছে!")
+    
     seen_batches = set()
-
     session = requests.Session()
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
 
@@ -49,17 +50,14 @@ def track_pdo():
             'username': USERNAME,
             'password': PASSWORD
         }
-        login_res = session.post(LOGIN_URL, data=login_payload, headers=headers, timeout=15)
-        print(f"Login Response Status: {login_res.status_code}")
+        session.post(LOGIN_URL, data=login_payload, headers=headers, timeout=15)
     except Exception as e:
-        print(f"Login Attempt Error: {e}")
+        print(f"Login Error: {e}")
 
-    # ব্যাকগ্রাউন্ড মনিটরিং লুপ
+    # ব্যাকগ্রাউন্ড লুপ
     while True:
         try:
             response = session.get(BATCH_URL, headers=headers, timeout=15)
-            print(f"Target Site Fetch Status: {response.status_code}")
-            
             if response.status_code == 200:
                 soup = BeautifulSoup(response.text, 'html.parser')
                 rows = soup.find_all('tr')
@@ -67,20 +65,17 @@ def track_pdo():
                     text = row.get_text().strip()
                     if text and text not in seen_batches:
                         seen_batches.add(text)
-                        # নতুন ডাটা খুঁজে পেলে টেলিগ্রামে পাঠাবে
+                        # নতুন ডাটা পাওয়া গেলে টেলিগ্রামে অ্যালার্ট পাঠাবে
             else:
-                print(f"Site Warning - Status Code: {response.status_code}")
+                print(f"Site Status: {response.status_code}")
         except Exception as e:
             print(f"Fetch Error: {e}")
         
-        # প্রতি ৫ মিনিট (৩০০ সেকেন্ড) পরপর চেক করবে
         time.sleep(300)
 
 if __name__ == "__main__":
-    # ট্র্যাকার ব্যাকগ্রাউন্ড থ্রেডে চলবে
     tracker_thread = Thread(target=track_pdo)
     tracker_thread.daemon = True
     tracker_thread.start()
     
-    # পোর্ট বাইন্ডিং নিশ্চিত করতে মেইন থ্রেডে ফ্ল্যাস্ক সার্ভার চলবে
     run_web_server()
